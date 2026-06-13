@@ -1,0 +1,28 @@
+{
+  "name": "@lamartinecabral/pi-web-search",
+  "version": "1.0.0",
+  "description": "Web search and fetch tools for the pi coding agent. Uses your local Browser with puppeteer core.",
+  "main": "./index.ts",
+  "author": "lamartinecabral",
+  "license": "MIT",
+  "files": [
+    "index.ts",
+    "LICENSE",
+    "README.md"
+  ],
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "web-search",
+    "puppeteer"
+  ],
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "^0.79.3",
+    "typebox": "^1.2.9"
+  }
+}
