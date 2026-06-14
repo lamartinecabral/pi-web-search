@@ -6,6 +6,65 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: "web_search",
     label: "Web Search",
+    description: "Use this tool to retrieve information from the live web.",
+    parameters: Type.Object({
+      query: Type.String({
+        description: "The search terms or question.",
+      }),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+      try {
+        const query = String(params.query ?? "").trim();
+        if (!query) {
+          throw new Error("Query must be a non-empty string.");
+        }
+
+        const results = await searchWeb(query);
+
+        // for (const result of results) {
+        //   try {
+        //     const { title, content } = await getUrlContent(result.url);
+
+        //     if (!contentContainsSnippet(content, result.snippet)) continue;
+
+        //     const formatted = [
+        //       `**SOURCE**: ${result.url}`,
+        //       `**TITLE**: ${title}`,
+        //       `**CONTENT**: ${content}`,
+        //     ].join("\n");
+
+        //     return {
+        //       content: [{ text: formatted, type: "text" }],
+        //       details: { title, content, url: result.url },
+        //     };
+        //   } catch (_) {
+        //     continue; // If fetching content fails, skip to the next result
+        //   }
+        // }
+
+        const formatted = results
+          .map((result) =>
+            [
+              `**SOURCE**: ${result.url}`,
+              `**TITLE**: ${result.title}`,
+              `**SNIPPET**: ${result.snippet}`,
+            ].join("\n"),
+          )
+          .join("\n\n");
+
+        return {
+          content: [{ text: formatted || "No results found.", type: "text" }],
+          details: results,
+        };
+      } catch (err) {
+        throw err;
+      }
+    },
+  });
+
+  pi.registerTool({
+    name: "news_search",
+    label: "News Search",
     description:
       "Search the live web for current events, news, or general real-time information.",
     parameters: Type.Object({
@@ -43,8 +102,8 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.registerTool({
-    name: "fetch_url_content",
-    label: "Fetch URL Content",
+    name: "web_fetch",
+    label: "Web Fetch",
     description:
       "Extract and parse the raw text content from a specific live website URL.",
     parameters: Type.Object({
@@ -95,6 +154,89 @@ type SearchResult = {
   url: string;
   snippet: string;
 };
+
+export async function searchWeb(query: string) {
+  const browser = await puppeteer.launch({
+    executablePath: chromePath,
+    headless: false,
+  });
+
+  try {
+    const page = await browser.newPage();
+
+    await page.goto(
+      `${BRAVE_SEARCH_URL}/search?q=${encodeURIComponent(query)}`,
+      {
+        waitUntil: "domcontentloaded",
+        timeout: WEB_TIMEOUT_MS,
+      },
+    );
+
+    await page.waitForFunction(
+      () => {
+        const browserDocument = (globalThis as any).document;
+        const main = browserDocument?.querySelector?.("main");
+        if (!main) return false;
+
+        const hasResults =
+          main.querySelector(
+            "article, [data-type='web'], .snippet, .result, a[href^='http']",
+          ) !== null;
+        const noResults = /no results|did not match any documents/i.test(
+          main.textContent ?? "",
+        );
+
+        return hasResults || noResults;
+      },
+      { timeout: WEB_TIMEOUT_MS },
+    );
+
+    const results = await page.evaluate((maxResults) => {
+      const cleanText = (value: string | null | undefined) =>
+        (value ?? "").replace(/\s+/g, " ").trim();
+      const browserDocument = (globalThis as any).document;
+
+      const parsedResults: SearchResult[] = [];
+
+      const snippets = browserDocument.querySelectorAll(
+        "main .snippet[data-type='web']",
+      );
+
+      for (const snippet of snippets) {
+        const url = snippet.querySelector?.("a[href^='http']").href;
+        const title = snippet.querySelector?.(
+          "a[href^='http'] .title",
+        ).innerText;
+
+        let text = "";
+        const content = snippet.querySelector?.(".content");
+        if (content) {
+          text = content.innerText;
+          const when = content.querySelector?.(".t-secondary")?.innerText;
+          if (when) text = text.replace(when, "");
+        }
+
+        parsedResults.push({
+          title: title,
+          url: url,
+          snippet: cleanText(text),
+        });
+
+        if (parsedResults.length >= maxResults) break;
+      }
+
+      return parsedResults;
+    }, MAX_RESULTS);
+
+    if (!results.length) {
+      return [];
+    }
+
+    return results;
+  } finally {
+    await browser.close();
+  }
+}
 
 export async function searchNews(query: string) {
   const browser = await puppeteer.launch({
@@ -240,3 +382,28 @@ export async function getUrlContent(
     await browser.close();
   }
 }
+
+const contentContainsSnippet = (content: string, snippet: string) => {
+  if (!snippet) return true;
+  const a = snippet.toLowerCase();
+  const m = a.length;
+  for (let i = 0; i < content.length; i += m) {
+    const chunk = content.slice(i, i + m * 2);
+    if (chunk.length < m) break;
+    const b = chunk.toLowerCase();
+    const n = b.length;
+    // dp[i][j] = LCS length of a[0..i-1] and b[0..j-1]
+    const dp: number[] = new Array(n + 1).fill(0);
+    let prev;
+    for (let i = 1; i <= m; i++) {
+      prev = 0;
+      for (let j = 1; j <= n; j++) {
+        const temp = dp[j];
+        dp[j] = a[i - 1] === b[j - 1] ? prev + 1 : Math.max(dp[j], dp[j - 1]);
+        prev = temp;
+      }
+    }
+    if (dp[n] / m >= 0.6) return true;
+  }
+  return false;
+};
