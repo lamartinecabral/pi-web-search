@@ -2,6 +2,8 @@
 
 An extension for [pi](https://github.com/earendil-works/pi) that adds web retrieval tools, allowing the coding agent to perform searches and fetch content from the internet using a local browser via `puppeteer-core`.
 
+The HTML parsing engine is built from scratch specifically optimized to maximize LLM comprehension and context-window efficiency.
+
 ## Installation
 
 Install the extension directly from GitHub using the pi CLI:
