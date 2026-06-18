@@ -317,6 +317,10 @@ export async function getUrlContent(
   return { title, content };
 }
 
+/**
+ * Checks if the content contains the snippet with at least 60% similarity using a longest common subsequence approach in overlapping chunks.
+ * Returns the index of the content chunk where the snippet is found, or null if not found.
+ */
 const contentContainsSnippet = (
   content: string,
   snippet: string,
@@ -345,9 +349,10 @@ const contentContainsSnippet = (
   return null;
 };
 
-const extractPageContent = async (page: Page) => {
-  const [title, content] = await page.evaluate(() => {
+const extractPageContent = (page: Page) => {
+  return page.evaluate(() => {
     const title = document.title?.trim();
+
     const marginStart = (text = "", n = 0) => {
       let start = "";
       for (let i = 1; i <= n; i++) {
@@ -547,8 +552,6 @@ const extractPageContent = async (page: Page) => {
       text = document.body.innerText.trim();
     }
 
-    return [title, text];
+    return { title, content: text };
   });
-
-  return { title, content };
 };

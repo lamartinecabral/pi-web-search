@@ -15,9 +15,6 @@ pi install git:github.com/lamartinecabral/pi-web-search
 ### `web_search`
 Perform general web searches to retrieve information and snippets from the live web via Brave Search.
 
-### `news_search`
-Search for current events, news, or real-time information using Brave News.
-
 ### `web_fetch`
 Extract and parse the raw text content from a specific URL.
 
