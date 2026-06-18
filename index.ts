@@ -97,7 +97,7 @@ type SearchResult = {
   snippet: string;
 };
 
-async function urlContent(query: string) {
+async function urlContent(url: string) {
   const browser = await puppeteer.launch({
     executablePath: chromePath,
     headless: false,
@@ -105,7 +105,7 @@ async function urlContent(query: string) {
 
   try {
     const page = await browser.newPage();
-    return await getUrlContent(page, query);
+    return await getUrlContent(page, url);
   } finally {
     await browser.close();
   }
@@ -308,32 +308,7 @@ export async function getUrlContent(
     { timeout: WEB_TIMEOUT_MS },
   );
 
-  const [title, content] = await page.evaluate(() => {
-    const browserDocument = (globalThis as any).document;
-
-    let text = browserDocument.body?.innerText.trim();
-    const title = browserDocument.title?.trim();
-
-    const selectors = [
-      "body main",
-      "body article",
-      "body #content",
-      "body .content",
-      "body .main",
-    ];
-
-    for (const selector of selectors) {
-      const elem = browserDocument.querySelector(selector);
-      if (!elem) continue;
-      const elemText = elem.innerText.trim() ?? "";
-      if (elemText.length / text.length > 0.5) {
-        text = elemText;
-        break;
-      }
-    }
-
-    return [title, text];
-  });
+  const { title, content } = await extractPageContent(page);
 
   if (!content) {
     throw new Error("Could not extract content from the page.");
@@ -368,4 +343,212 @@ const contentContainsSnippet = (
     if (dp[n] / m >= 0.6) return i;
   }
   return null;
+};
+
+const extractPageContent = async (page: Page) => {
+  const [title, content] = await page.evaluate(() => {
+    const title = document.title?.trim();
+    const marginStart = (text = "", n = 0) => {
+      let start = "";
+      for (let i = 1; i <= n; i++) {
+        if (!text.startsWith("\n".repeat(i))) {
+          start += "\n";
+        }
+      }
+      return start + text;
+    };
+
+    const marginEnd = (text = "", n = 0) => {
+      let end = "";
+      for (let i = 1; i <= n; i++) {
+        if (!text.endsWith("\n".repeat(i))) {
+          end += "\n";
+        }
+      }
+      return text + end;
+    };
+
+    const line = (text = "") => {
+      return marginStart(marginEnd(text, 1), 1);
+    };
+
+    const block = (text = "") => {
+      return marginStart(marginEnd(text, 2), 2);
+    };
+
+    const clean = (text = "") => {
+      return text.trim().replace(/\n+/g, " ");
+    };
+
+    const fixList = (text = "") => {
+      return text.replace(/\n([^\-])/g, " $1");
+    };
+
+    const mark = (text = "", marker = "") => {
+      if (!text.trim()) return text;
+      let styled = marker + text.trim() + marker;
+      if (text.startsWith(" ")) styled = " " + styled;
+      if (text.endsWith(" ")) styled = styled + " ";
+      return styled;
+    };
+
+    const concat = (text1 = "", text2 = "") => {
+      if (text1.endsWith("\n\n") && text2.startsWith("\n\n")) {
+        return text1 + text2.slice(2);
+      }
+      if (text1.endsWith("\n") && text2.startsWith("\n")) {
+        return text1 + text2.slice(1);
+      }
+      return text1 + text2;
+    };
+
+    const assertElem = <T extends keyof HTMLElementTagNameMap = "main">(
+      node: Node,
+      tag?: T,
+    ): "main" extends T ? HTMLElement : HTMLElementTagNameMap[T] => {
+      if (
+        node.nodeType === Node.ELEMENT_NODE &&
+        (!tag || node.nodeName === tag.toUpperCase())
+      ) {
+        // @ts-ignore
+        return node;
+      }
+      throw new Error(
+        `Expected element of type ${tag}, but got ${node.nodeName}`,
+      );
+    };
+
+    const extractText = (node: Node) => {
+      if (node.nodeType === Node.TEXT_NODE) {
+        const textContent = node.textContent ?? "";
+        return textContent.trim() || textContent === " "
+          ? textContent.trim() + " "
+          : "";
+      } else if (node.nodeType === Node.ELEMENT_NODE) {
+        const isHidden = ((e) =>
+          e.style.display === "none" ||
+          e.style.visibility === "hidden" ||
+          e.hidden)(assertElem(node));
+        if (isHidden) {
+          return "";
+        }
+
+        switch (node.nodeName) {
+          case "SCRIPT":
+          case "NOSCRIPT":
+          case "STYLE":
+          case "FORM":
+          case "IFRAME":
+          case "SVG":
+            return "";
+          case "BR":
+            return "\n";
+          case "HR":
+            return block("---");
+          case "IMG":
+          case "VIDEO":
+            const text = String(
+              "alt" in node ? node.alt : "title" in node ? node.title : "",
+            ).trim();
+            return text ? `(${node.nodeName}: ${text}) ` : "";
+          case "SELECT":
+            const selectedOptions = [
+              ...assertElem(node, "select").selectedOptions,
+            ];
+            return selectedOptions.length > 0
+              ? selectedOptions.map((o) => o.innerText).join(",") + " "
+              : "";
+          case "PRE":
+            return block("```\n" + assertElem(node, "pre").innerText + "\n```");
+          case "LI":
+            const innerText = assertElem(node, "li").innerText;
+            return innerText.trim() ? line("- " + clean(innerText)) : "";
+        }
+
+        let text = "";
+        node.childNodes.forEach((child) => {
+          text = concat(text, extractText(child));
+        });
+
+        switch (node.nodeName) {
+          case "SPAN":
+          case "LABEL":
+          case "A":
+            return text;
+          case "P":
+          case "SECTION":
+          case "ARTICLE":
+          case "MAIN":
+            return text.trim() ? block(text) : "";
+          case "OL":
+            return text.trim()
+              ? block(fixList(text).replaceAll("\n- ", "\n1. "))
+              : "";
+          case "UL":
+            return text.trim() ? block(fixList(text)) : "";
+          case "TABLE":
+          case "TBODY":
+            return text.trim() ? block(text) : "";
+          case "H1":
+          case "H2":
+          case "H3":
+          case "H4":
+          case "H5":
+          case "H6":
+            if (!text.trim()) return "";
+            return block("#".repeat(+node.nodeName[1]) + " " + clean(text));
+          case "TR":
+            const isHeaderRow = !!assertElem(node, "tr").querySelector("th");
+            if (isHeaderRow) {
+              return marginEnd(
+                marginStart("| " + text.trim(), 2) +
+                  `\n| ${" --- |".repeat(text.split(" | ").length)}`,
+                1,
+              );
+            }
+            return line("| " + text.trim());
+          case "TD":
+          case "TH":
+            return text.trim() ? " " + clean(text) + " |" : "";
+          case "B":
+          case "STRONG":
+            return mark(text, "**");
+          case "I":
+          case "EM":
+            return mark(text, "_");
+          case "DEL":
+            return mark(text, "~");
+          case "CODE":
+            return mark(text, "`");
+          case "BLOCKQUOTE":
+            return text.trim()
+              ? block(
+                  text
+                    .trim()
+                    .split("\n")
+                    .map((line) => "> " + line)
+                    .join("\n") + "\n",
+                )
+              : "";
+        }
+
+        return text.trim() ? line(text) : "";
+      }
+
+      return "";
+    };
+
+    const main = document.querySelectorAll("main");
+    let text = "";
+
+    try {
+      text = extractText(main.length === 1 ? main[0] : document.body).trim();
+    } catch (err) {
+      text = document.body.innerText.trim();
+    }
+
+    return [title, text];
+  });
+
+  return { title, content };
 };
