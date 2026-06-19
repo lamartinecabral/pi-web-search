@@ -309,7 +309,7 @@ export async function getUrlContent(
     { timeout: WEB_TIMEOUT_MS },
   );
 
-  const { title, content } = await extractPageContent(page);
+  const { title, content } = await page.evaluate(extractContent);
 
   if (!content) {
     throw new Error("Could not extract content from the page.");
@@ -348,11 +348,4 @@ const contentContainsSnippet = (
     if (dp[n] / m >= 0.6) return i;
   }
   return null;
-};
-
-const extractPageContent = (page: Page) => {
-  return page.evaluate((extractContentStr) => {
-    const extractContentFn: typeof extractContent = eval(extractContentStr);
-    return extractContentFn(document);
-  }, extractContent.toString());
 };
