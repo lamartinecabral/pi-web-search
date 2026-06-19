@@ -415,7 +415,7 @@ const extractPageContent = (page: Page) => {
         node.nodeType === Node.ELEMENT_NODE &&
         (!tag || node.nodeName === tag.toUpperCase())
       ) {
-        // @ts-ignore
+        // @ts-ignore: ignore
         return node;
       }
       throw new Error(
@@ -424,12 +424,7 @@ const extractPageContent = (page: Page) => {
     };
 
     const extractText = (node: Node) => {
-      if (node.nodeType === Node.TEXT_NODE) {
-        const textContent = node.textContent ?? "";
-        return textContent.trim() || textContent === " "
-          ? textContent.trim() + " "
-          : "";
-      } else if (node.nodeType === Node.ELEMENT_NODE) {
+      if (node.nodeType === Node.ELEMENT_NODE) {
         const isHidden = ((e) =>
           e.style.display === "none" ||
           e.style.visibility === "hidden" ||
@@ -451,28 +446,36 @@ const extractPageContent = (page: Page) => {
           case "HR":
             return block("---");
           case "IMG":
-          case "VIDEO":
+          case "VIDEO": {
             const text = String(
               "alt" in node ? node.alt : "title" in node ? node.title : "",
             ).trim();
             return text ? `(${node.nodeName}: ${text}) ` : "";
-          case "SELECT":
+          }
+          case "SELECT": {
             const selectedOptions = [
               ...assertElem(node, "select").selectedOptions,
             ];
             return selectedOptions.length > 0
               ? selectedOptions.map((o) => o.innerText).join(",") + " "
               : "";
+          }
           case "PRE":
             return block("```\n" + assertElem(node, "pre").innerText + "\n```");
-          case "LI":
+          case "LI": {
             const innerText = assertElem(node, "li").innerText;
             return innerText.trim() ? line("- " + clean(innerText)) : "";
+          }
         }
 
         let text = "";
         node.childNodes.forEach((child) => {
-          text = concat(text, extractText(child));
+          const childText =
+            child.nodeType === Node.TEXT_NODE
+              ? (child.textContent ?? "")
+              : extractText(child);
+          if ((!text || text.endsWith("\n")) && !childText.trim()) return;
+          text = concat(text, childText);
         });
 
         switch (node.nodeName) {
@@ -502,7 +505,7 @@ const extractPageContent = (page: Page) => {
           case "H6":
             if (!text.trim()) return "";
             return block("#".repeat(+node.nodeName[1]) + " " + clean(text));
-          case "TR":
+          case "TR": {
             const isHeaderRow = !!assertElem(node, "tr").querySelector("th");
             if (isHeaderRow) {
               return marginEnd(
@@ -512,6 +515,7 @@ const extractPageContent = (page: Page) => {
               );
             }
             return line("| " + text.trim());
+          }
           case "TD":
           case "TH":
             return text.trim() ? " " + clean(text) + " |" : "";
@@ -548,7 +552,7 @@ const extractPageContent = (page: Page) => {
 
     try {
       text = extractText(main.length === 1 ? main[0] : document.body).trim();
-    } catch (err) {
+    } catch (_) {
       text = document.body.innerText.trim();
     }
 
