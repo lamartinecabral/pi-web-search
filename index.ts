@@ -423,6 +423,15 @@ const extractPageContent = (page: Page) => {
       );
     };
 
+    const mainCandidate = (selector = "") => {
+      const list = [...document.querySelectorAll(selector)].filter(
+        // @ts-ignore: ignore
+        (a) => a.innerText?.trim(),
+      );
+      if (list.length === 1) return list[0];
+      return null;
+    };
+
     const extractText = (node: Node) => {
       if (node.nodeType === Node.ELEMENT_NODE) {
         const isHidden = ((e) =>
@@ -452,6 +461,8 @@ const extractPageContent = (page: Page) => {
             ).trim();
             return text ? `(${node.nodeName}: ${text}) ` : "";
           }
+          case "BUTTON":
+            return assertElem(node, "button").innerText;
           case "SELECT": {
             const selectedOptions = [
               ...assertElem(node, "select").selectedOptions,
@@ -470,13 +481,17 @@ const extractPageContent = (page: Page) => {
 
         let text = "";
         node.childNodes.forEach((child) => {
-          const childText =
-            child.nodeType === Node.TEXT_NODE
-              ? (child.textContent ?? "")
-              : extractText(child);
+          let childText = "";
+          if (child.nodeType === Node.TEXT_NODE) {
+            childText = child.textContent ?? "";
+            if (!childText.trim() && childText) childText = " ";
+          } else {
+            childText = extractText(child);
+          }
           if ((!text || text.endsWith("\n")) && !childText.trim()) return;
           text = concat(text, childText);
         });
+        text = text.replace(/(^ +\n)|(\n +$)/g, "\n");
 
         switch (node.nodeName) {
           case "SPAN":
@@ -495,8 +510,11 @@ const extractPageContent = (page: Page) => {
           case "UL":
             return text.trim() ? block(fixList(text)) : "";
           case "TABLE":
-          case "TBODY":
             return text.trim() ? block(text) : "";
+          case "THEAD":
+            return text.trim() ? marginStart(text, 2) : "";
+          case "TBODY":
+            return text.trim() ? marginEnd(text, 2) : "";
           case "H1":
           case "H2":
           case "H3":
@@ -547,11 +565,15 @@ const extractPageContent = (page: Page) => {
       return "";
     };
 
-    const main = document.querySelectorAll("main");
+    let main = null;
+    if (!main) main = mainCandidate("main");
+    if (!main) main = mainCandidate("article");
+    if (!main) main = document.body;
+
     let text = "";
 
     try {
-      text = extractText(main.length === 1 ? main[0] : document.body).trim();
+      text = main ? extractText(main).trim() : "";
     } catch (_) {
       text = document.body.innerText.trim();
     }
