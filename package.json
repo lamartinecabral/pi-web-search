@@ -26,7 +26,7 @@
     "typebox": "^1.2.9"
   },
   "dependencies": {
-    "@lamartinecabral/extract-content": "github:lamartinecabral/extract-content#semver:0.0.1",
+    "@lamartinecabral/extract-content": "github:lamartinecabral/extract-content#semver:0.0.7",
     "puppeteer-core": "^25.1.0"
   }
 }
