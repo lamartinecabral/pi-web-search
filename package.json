@@ -28,6 +28,7 @@
   },
   "dependencies": {
     "@lamartinecabral/extract-content": "github:lamartinecabral/extract-content#semver:0.0.7",
+    "happy-dom": "^20.14.5",
     "puppeteer-core": "^25.1.0"
   }
 }
