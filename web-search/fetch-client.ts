@@ -48,6 +48,7 @@ const webSearch = async (query: string): Promise<SearchResult[]> => {
 const webFetch = async (url: string): Promise<FetchResult> => {
   const document = new Window().document;
   try {
+    if (!url.startsWith("http")) url = `https://${url}`;
     const source = await fetch(url).then((res) => res.text());
     document.write(source);
 
@@ -68,7 +69,7 @@ const bang = <T>(value: T | null | undefined): T => {
 };
 
 const innerText = <T extends {}>(elem: T | null) => {
-  return elem && "innerText" in elem ? String(elem.innerText) : "";
+  return elem && "innerText" in elem ? String(elem.innerText).trim() : "";
 };
 
 export default {
