@@ -5,7 +5,7 @@ import type { FetchResult, SearchResult } from "./utils.ts";
 const DUCKDUCKGO_URL = "https://html.duckduckgo.com/html";
 
 export async function isDuckduckgoAvailable() {
-  const document = new Window().document;
+  const document = new Window({ url: DUCKDUCKGO_URL }).document;
   try {
     const source = await fetch(DUCKDUCKGO_URL).then((res) => res.text());
     document.write(source);
@@ -19,17 +19,18 @@ export async function isDuckduckgoAvailable() {
 }
 
 const webSearch = async (query: string): Promise<SearchResult[]> => {
-  const document = new Window().document;
+  const url = `${DUCKDUCKGO_URL}/?q=${encodeURIComponent(query)}`;
+  const document = new Window({ url }).document;
   try {
-    const url = `${DUCKDUCKGO_URL}/?q=${encodeURIComponent(query)}`;
     const source = await fetch(url).then((res) => res.text());
     document.write(source);
-    const resultElems = [...bang(document.getElementById("links")).children];
+    const resultElems = [...document.querySelectorAll(".web-result")];
 
     const results = resultElems
       .map((elem) => {
         const title = innerText(elem.querySelector(".result__title"));
-        const url = innerText(elem.querySelector(".result__extras"));
+        let url = innerText(elem.querySelector(".result__url"));
+        if (url && !url.startsWith("http")) url = `https://${url}`;
         const snippet = innerText(elem.querySelector(".result__snippet"));
         return { title, url, snippet };
       })
@@ -41,14 +42,13 @@ const webSearch = async (query: string): Promise<SearchResult[]> => {
     return results;
   } catch (_) {
     document.close();
-    throw new Error("Could not run web search");
+    throw new Error("Web search failed");
   }
 };
 
 const webFetch = async (url: string): Promise<FetchResult> => {
-  const document = new Window().document;
+  const document = new Window({ url }).document;
   try {
-    if (!url.startsWith("http")) url = `https://${url}`;
     const source = await fetch(url).then((res) => res.text());
     document.write(source);
 
@@ -61,11 +61,6 @@ const webFetch = async (url: string): Promise<FetchResult> => {
     document.close();
     throw new Error("Could not run web fetch");
   }
-};
-
-const bang = <T>(value: T | null | undefined): T => {
-  if (value === null || value === undefined) throw new Error("value is nil");
-  return value;
 };
 
 const innerText = <T extends {}>(elem: T | null) => {
