@@ -59,7 +59,7 @@ const webFetch = async (url: string): Promise<FetchResult> => {
     return { title, content };
   } catch (_) {
     document.close();
-    throw new Error("Could not run web fetch");
+    throw new Error("Web fetch failed");
   }
 };
 
@@ -67,7 +67,66 @@ const innerText = <T extends {}>(elem: T | null) => {
   return elem && "innerText" in elem ? String(elem.innerText).trim() : "";
 };
 
+class Mutex {
+  private locked = false;
+  private queue: Array<() => void> = [];
+
+  /**
+   * Acquires the lock. Resolves with a release function once acquired.
+   */
+  async acquire(): Promise<() => void> {
+    if (!this.locked) {
+      this.locked = true;
+      return this.createRelease();
+    }
+
+    return new Promise<() => void>((resolve) => {
+      this.queue.push(() => {
+        this.locked = true;
+        resolve(this.createRelease());
+      });
+    });
+  }
+
+  /**
+   * Runs a callback within the lock, automatically releasing it even if an error occurs.
+   */
+  async runExclusive<T>(callback: () => Promise<T> | T): Promise<T> {
+    const release = await this.acquire();
+    try {
+      return await callback();
+    } finally {
+      release();
+    }
+  }
+
+  /**
+   * Returns whether the lock is currently acquired.
+   */
+  isLocked(): boolean {
+    return this.locked;
+  }
+
+  private createRelease(): () => void {
+    let released = false;
+
+    return () => {
+      if (released) return;
+      released = true;
+
+      const next = this.queue.shift();
+      if (next) {
+        next();
+      } else {
+        this.locked = false;
+      }
+    };
+  }
+}
+
+const mutex = new Mutex();
+
 export default {
-  webFetch,
-  webSearch,
+  webFetch: (url: string) => mutex.runExclusive(() => webFetch(url)),
+  webSearch: (query: string) => mutex.runExclusive(() => webSearch(query)),
 };
